@@ -8,11 +8,13 @@ members = [".", "migration"]
 
 [dependencies]
 tokio = { version = "1.38.0", features = ["full"] }
-
+migration = { path = "migration" } # depends on your needs
 longbridge = { version = "0.2.77" }
 dotenv = "0.15.0"
 tracing = "0.1.40"
-sea-orm = { version = "^0.12.15", features = ["serde_json", "runtime-tokio-native-tls", "macros", "sqlx-sqlite", "sqlx-postgres", "sqlx-mysql"] }
+sea-orm = { version = "^0.12.15", features = ["serde_json", "runtime-tokio-native-tls", "macros", "sqlx-mysql"] }
+log = "0.4.21"
+tracing-subscriber = { version = "0.3.18", features = ["fmt", "json", "env-filter"] }
 
 [dev-dependencies]
 sea-orm-cli = { version = "1.0.0-rc.6" }
