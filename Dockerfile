@@ -17,7 +17,7 @@ RUN cargo build --target x86_64-unknown-linux-musl --release
 
 FROM rust:1.79.0-slim
 RUN apt update && \
-    apt install -y musl-tools musl-dev libssl-dev openssl-dev openssl && \
+    apt install -y pkg-config musl-tools musl-dev libssl-dev && \
     update-ca-certificates
 
 COPY --from=build ./target/x86_64-unknown-linux-musl/release/quoty-insight /app/quoty-insight
