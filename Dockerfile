@@ -12,7 +12,7 @@ COPY ./src ./src
 COPY ./Cargo.toml .
 COPY ./migration ./migration
 
-RUN cargo build --target x86_64-unknown-linux-musl --release
+RUN cargo build --release
 
 
 FROM rust:1.79.0-slim
@@ -20,6 +20,6 @@ RUN apt update && \
     apt install -y pkg-config musl-tools musl-dev libssl-dev && \
     update-ca-certificates
 
-COPY --from=build ./target/x86_64-unknown-linux-musl/release/quoty-insight /app/quoty-insight
+COPY --from=build ./target/release/quoty-insight /app/quoty-insight
 
 ENTRYPOINT ["./app/quoty-insight"]
