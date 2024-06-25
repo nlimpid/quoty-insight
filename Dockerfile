@@ -2,7 +2,7 @@ FROM rust:1.79.0-slim as build
 
 RUN rustup target add x86_64-unknown-linux-musl && \
     apt update && \
-    apt install -y pkg-config musl-tools musl-dev libssl-dev openssl-dev openssl && \
+    apt install -y pkg-config musl-tools musl-dev libssl-dev && \
     update-ca-certificates
 
 
