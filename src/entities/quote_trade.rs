@@ -9,7 +9,7 @@ pub struct Model {
     pub id: i32,
     pub symbol: String,
     pub sequence: i64,
-    #[sea_orm(column_type = "Decimal(Some((10, 0)))", nullable)]
+    #[sea_orm(column_type = "Decimal(Some((18, 4)))", nullable)]
     pub price: Option<Decimal>,
     pub volume: Option<i32>,
     pub timestamp: i64,

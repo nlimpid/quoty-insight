@@ -62,6 +62,7 @@ impl QuoteServer {
         println!("start quote server");
         // 模拟数据处理任务
         while let Some(event) = self.price_rx.recv().await {
+            println!("event symbol {}", event.symbol.clone());
             match event.detail {
                 PushEventDetail::Quote(price) => {
                     prices.push(convert_to_storage(event.symbol, &price));
@@ -72,14 +73,14 @@ impl QuoteServer {
                 }
                 _ => {}
             }
-            if prices.len() >= 1000 {
+            if prices.len() >= 10 {
                 println!("batch insert db, first is {:?}", prices.first().clone().unwrap().symbol);
                 db_pool.batch_insert_price(prices.clone()).await;
                 prices.clear();  // 清空数组以便新一轮收集
             }
 
-            if trades.len() >= 1000 {
-                println!("batch insert db, first is {:?}", prices.first().clone().unwrap().symbol);
+            if trades.len() >= 10 {
+                println!("batch insert db, first is {:?}", trades.first().clone().unwrap().symbol);
                 db_pool.batch_insert_trade(trades.clone()).await;
                 trades.clear();  // 清空数组以便新一轮收集
             }
@@ -145,7 +146,9 @@ mod test {
         dotenv().ok();
         let mut h = QuoteServer::new().await;
 
-        h.sub(["700.HK", "AAPL.US", "TSLA.US", "NFLX.US"]).await;
+        let default_sub: Vec<String> = vec![];
+
+        h.sub(default_sub).await;
 
         println!("start quote server");
         let p = Storage::new().await;
