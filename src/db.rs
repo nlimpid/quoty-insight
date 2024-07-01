@@ -3,20 +3,19 @@ use std::error::Error;
 use std::time::Duration;
 
 use dotenv::dotenv;
-use sea_orm::{ActiveModelTrait, EntityTrait, InsertResult};
 use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, EntityTrait, InsertResult};
 
 use migration::{Migrator, MigratorTrait};
 
-use crate::entities::{quote_price, quote_trade};
 use crate::entities::quote_price::Entity as QuotePrice;
 use crate::entities::quote_sub::Entity as QuoteSub;
 use crate::entities::quote_trade::Entity as QuoteTrade;
+use crate::entities::{quote_price, quote_trade};
 
 pub struct Storage {
     db: sea_orm::DatabaseConnection,
 }
-
 
 impl Storage {
     pub async fn new() -> Self {
@@ -29,24 +28,26 @@ impl Storage {
             .connect_timeout(Duration::from_secs(8))
             .acquire_timeout(Duration::from_secs(8))
             .idle_timeout(Duration::from_secs(8))
-            .max_lifetime(Duration::from_secs(8))
-            .sqlx_logging(true);
+            .max_lifetime(Duration::from_secs(8));
+            // .sqlx_logging(true);
 
         let db = sea_orm::Database::connect(opt).await.unwrap();
         Migrator::up(&db, None).await.unwrap();
 
-        return Storage { db };
+        Storage { db }
     }
 
-
     pub async fn batch_insert_price(&self, prices: Vec<quote_price::ActiveModel>) {
-        let res: InsertResult<quote_price::ActiveModel> = QuotePrice::insert_many(prices).exec(&self.db).await.unwrap();
+        let res: InsertResult<quote_price::ActiveModel> = QuotePrice::insert_many(prices)
+            .exec(&self.db)
+            .await
+            .unwrap();
         println!("insert result is {}", res.last_insert_id);
     }
 
-
     pub async fn batch_insert_trade(&self, items: Vec<quote_trade::ActiveModel>) {
-        let res: InsertResult<quote_trade::ActiveModel> = QuoteTrade::insert_many(items).exec(&self.db).await.unwrap();
+        let res: InsertResult<quote_trade::ActiveModel> =
+            QuoteTrade::insert_many(items).exec(&self.db).await.unwrap();
         println!("insert result is {}", res.last_insert_id);
     }
 
@@ -55,7 +56,6 @@ impl Storage {
         res.iter().map(|i| i.symbol.clone()).collect()
     }
 }
-
 
 mod test {
     use dotenv::dotenv;
@@ -82,7 +82,6 @@ mod test {
         let items = QuotePrice::find().all(db).await.unwrap();
         println!(" data is {}", items.len());
     }
-
 
     #[tokio::test]
     async fn test_sublist() {

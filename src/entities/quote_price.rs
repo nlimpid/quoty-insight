@@ -9,17 +9,17 @@ pub struct Model {
     pub id: i32,
     pub symbol: String,
     pub sequence: Option<i64>,
-    #[sea_orm(column_type = "Decimal(Some((10, 0)))", nullable)]
+    #[sea_orm(column_type = "Decimal(Some((18, 2)))", nullable)]
     pub last_done: Option<Decimal>,
-    #[sea_orm(column_type = "Decimal(Some((10, 0)))", nullable)]
+    #[sea_orm(column_type = "Decimal(Some((18, 2)))", nullable)]
     pub open: Option<Decimal>,
-    #[sea_orm(column_type = "Decimal(Some((10, 0)))", nullable)]
+    #[sea_orm(column_type = "Decimal(Some((18, 2)))", nullable)]
     pub high: Option<Decimal>,
-    #[sea_orm(column_type = "Decimal(Some((10, 0)))", nullable)]
+    #[sea_orm(column_type = "Decimal(Some((18, 2)))", nullable)]
     pub low: Option<Decimal>,
     pub timestamp: i64,
     pub volume: Option<i64>,
-    #[sea_orm(column_type = "Decimal(Some((10, 0)))", nullable)]
+    #[sea_orm(column_type = "Decimal(Some((18, 2)))", nullable)]
     pub turnover: Option<Decimal>,
     pub trade_status: Option<i32>,
     pub trade_session: Option<i32>,
