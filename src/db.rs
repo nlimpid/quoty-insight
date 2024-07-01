@@ -19,8 +19,6 @@ pub struct Storage {
 
 impl Storage {
     pub async fn new() -> Self {
-        dotenv().ok().unwrap();
-
         let database_url = env::var("DATABASE_URL").unwrap();
 
         println!("database_url is {}", &database_url);
