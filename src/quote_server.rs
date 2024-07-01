@@ -146,7 +146,9 @@ mod test {
         dotenv().ok();
         let mut h = QuoteServer::new().await;
 
-        h.sub(["700.HK", "AAPL.US", "TSLA.US", "NFLX.US"]).await;
+        let default_sub: Vec<String> = vec![];
+
+        h.sub(default_sub).await;
 
         println!("start quote server");
         let p = Storage::new().await;
