@@ -2,44 +2,52 @@ use std::env;
 use std::error::Error;
 use std::time::Duration;
 
-use dotenv::dotenv;
-use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, EntityTrait, InsertResult};
-use sqlx::{Connection, ConnectOptions};
-use migration::{Migrator, MigratorTrait};
-use url::Url;
 use crate::entities::quote_price::Entity as QuotePrice;
 use crate::entities::quote_sub::Entity as QuoteSub;
 use crate::entities::quote_trade::Entity as QuoteTrade;
 use crate::entities::{quote_price, quote_trade};
+use dotenv::dotenv;
+use migration::{Migrator, MigratorTrait};
+use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, EntityTrait, InsertResult};
+use sqlx::{ConnectOptions, Connection};
+use url::Url;
 
 pub struct Storage {
     db: sea_orm::DatabaseConnection,
 }
 
+async fn new_seaorm(database_url: String) -> sea_orm::DatabaseConnection {
+    let mut opt = sea_orm::ConnectOptions::new(&database_url);
+    opt.max_connections(100)
+        .min_connections(5)
+        .connect_timeout(Duration::from_secs(8))
+        .acquire_timeout(Duration::from_secs(8))
+        .idle_timeout(Duration::from_secs(8))
+        .max_lifetime(Duration::from_secs(8));
+    // .sqlx_logging(true);
+
+    let db = sea_orm::Database::connect(opt).await.unwrap();
+
+    db
+}
+
+async fn new_seaorm_sqlx(database_url: String) -> sea_orm::DatabaseConnection {
+    let url = Url::parse(&database_url).unwrap();
+    let sqlx_options = sqlx::mysql::MySqlConnectOptions::from_url(&url).unwrap();
+    // let sqlx_conn = sqlx::MySqlConnection::connect(&database_url).await?;
+    let sqlx_pool = sqlx::MySqlPool::connect_with(sqlx_options).await.unwrap();
+    let db = sea_orm::SqlxMySqlConnector::from_sqlx_mysql_pool(sqlx_pool);
+    db
+}
+
 impl Storage {
     pub async fn new() -> Self {
         let database_url = env::var("DATABASE_URL").unwrap();
+        println!("database_url is {}", &database_url.clone());
+        let db = new_seaorm_sqlx(database_url.clone()).await;
 
-        println!("database_url is {}", &database_url);
-        let url = Url::parse(&database_url).unwrap();
-
-        let sqlx_options = sqlx::mysql::MySqlConnectOptions::from_url(&url).unwrap();
-        // let sqlx_conn = sqlx::MySqlConnection::connect(&database_url).await?;
-        let sqlx_pool = sqlx::MySqlPool::connect_with(sqlx_options).await.unwrap();
-        let db = sea_orm::SqlxMySqlConnector::from_sqlx_mysql_pool(sqlx_pool);
-        // // let mut opt = sea_orm::ConnectOptions::new(&database_url);
-        // opt.max_connections(100)
-        //     .min_connections(5)
-        //     .connect_timeout(Duration::from_secs(8))
-        //     .acquire_timeout(Duration::from_secs(8))
-        //     .idle_timeout(Duration::from_secs(8))
-        //     .max_lifetime(Duration::from_secs(8));
-        //     // .sqlx_logging(true);
-        //
-        // let db = sea_orm::Database::connect(opt).await.unwrap();
         Migrator::up(&db, None).await.unwrap();
-
         Storage { db }
     }
 
