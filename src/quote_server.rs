@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use longbridge::quote::{PushEvent, PushEventDetail, PushQuote, PushTrades, SubFlags};
-use longbridge::{Config, Decimal, QuoteContext};
+use longport::quote::{
+    PushEvent, PushEventDetail, PushQuote, PushTrades, SecurityListCategory, SubFlags,
+};
+use longport::{Config, Decimal, Market, QuoteContext};
 use sea_orm::ActiveValue::Set;
 // use crate::channels;
 use tokio::sync::mpsc;
@@ -170,5 +172,18 @@ mod test {
         println!("init storage");
         println!("init storage finished");
         h.start_quote_server(&p).await;
+    }
+
+    #[tokio::test]
+    async fn test_security_list() {
+        dotenv::from_filename(".staging.env").unwrap();
+        let h = QuoteServer::new().await;
+        // Get basic information of securities
+        let resp = h
+            .quote_ctx
+            .security_list(Market::US, SecurityListCategory::Overnight)
+            .await
+            .unwrap();
+        println!("{:?}", resp.len());
     }
 }

@@ -9,7 +9,6 @@ members = [".", "migration"]
 [dependencies]
 tokio = { version = "1.39.3", features = ["full"] }
 migration = { path = "migration" } # depends on your needs
-longbridge = { version = "0.2.77" }
 dotenv = "0.15.0"
 tracing = "0.1.40"
 sea-orm = { version = "~1.0", features = [
@@ -26,6 +25,7 @@ tracing-subscriber = { version = "0.3.18", features = [
 # should compatible with sea-orm
 sqlx = { version = "0.7.4", features = ["mysql"] }
 url = "2.5.2"
+longport = "1.0.32"
 
 [dev-dependencies]
 sea-orm-cli = { version = "~1.0" }
