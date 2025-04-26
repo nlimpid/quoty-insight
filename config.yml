@@ -1,0 +1,15 @@
+subscriptions:
+  - "AAPL.US"
+  - "TSLA.US"
+  - "NVDA.US"
+  - "GOOG.US"
+  - "AMZN.US"
+  - "META.US"
+  - "NFLX.US"
+  - "PDD.US"
+  - "MSFT.US"
+  - "700.HK"
+
+sink:
+  type: yaml
+  path: config.yml

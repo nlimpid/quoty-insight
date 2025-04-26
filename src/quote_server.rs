@@ -1,44 +1,139 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use longport::quote::{
-    PushEvent, PushEventDetail, PushQuote, PushTrades, SecurityListCategory, SubFlags,
-};
+use longport::quote::SubFlags;
+use longport::quote::{PushDepth, PushEvent, PushEventDetail, PushQuote, PushTrades};
 use longport::{Config, Decimal, Market, QuoteContext};
-use sea_orm::ActiveValue::Set;
 // use crate::channels;
+use anyhow::Result;
 use tokio::sync::mpsc;
 
 pub(crate) struct QuoteServer {
     quote_ctx: QuoteContext,
+    // Egress is removed - downstream consumers handle egress
 
-    price_tx: mpsc::Sender<PushEvent>,
-    price_rx: mpsc::Receiver<PushEvent>,
+    // Keep the channel fed by QuoteContext's receiver
+    price_rx: Option<mpsc::Receiver<PushEvent>>, // Make Option to take ownership in dispatcher
+
+    // Senders for dispatched types
+    quote_tx: mpsc::Sender<Quote>,
+    trade_tx: mpsc::Sender<Trade>,
+    depth_tx: mpsc::Sender<Depth>,
+}
+
+// Struct to hold the receiver ends for consumers
+pub struct QuoteDispatchers {
+    pub quote_rx: mpsc::Receiver<Quote>,
+    pub trade_rx: mpsc::Receiver<Trade>,
+    pub depth_rx: mpsc::Receiver<Depth>,
+}
+
+#[derive(Debug)]
+pub struct Quote {
+    pub symbol: String,
+    pub data: PushQuote,
+}
+
+#[derive(Debug)]
+pub struct Trade {
+    pub symbol: String,
+    pub data: PushTrades,
+}
+
+#[derive(Debug)]
+pub struct Depth {
+    pub symbol: String,
+    pub data: PushDepth,
 }
 
 impl QuoteServer {
-    pub async fn new() -> Self {
-        let config = Arc::new(Config::from_env().unwrap());
-        // Create a context for quote APIs
-        let (ctx, mut receiver) = QuoteContext::try_new(config.clone()).await.unwrap();
-        let (tx, rx) = mpsc::channel::<PushEvent>(1000000); // 创建 channel
-        let price_tx = tx.clone();
+    // New returns the server and the dispatcher struct with receivers
+    pub async fn new() -> anyhow::Result<(Self, QuoteDispatchers)> {
+        let config = Arc::new(Config::from_env()?);
+        let (ctx, mut main_receiver) = QuoteContext::try_new(config).await?;
 
-        // Auto send all event
+        // Channel for raw events from QuoteContext receiver -> dispatcher task
+        // Increased buffer size for the raw intake channel potentially
+        let (internal_event_tx, internal_event_rx) = mpsc::channel::<PushEvent>(500_000);
+
+        // Task to forward from LongPort receiver to our internal channel
         tokio::spawn(async move {
-            while let Some(event) = receiver.recv().await {
-                if let Err(e) = price_tx.send(event).await {
-                    println!("Failed to send event: {:?}", e);
+            while let Some(event) = main_receiver.recv().await {
+                if internal_event_tx.send(event).await.is_err() {
+                    eprintln!("Internal event channel closed. Forwarder stopping.");
+                    break; // Exit if the receiver is dropped
                 }
             }
         });
 
-        QuoteServer {
+        // Create specific channels for dispatching
+        // Consider buffer sizes based on expected downstream processing rate
+        let (quote_tx, quote_rx) = mpsc::channel::<Quote>(10000);
+        let (trade_tx, trade_rx) = mpsc::channel::<Trade>(10000);
+        let (depth_tx, depth_rx) = mpsc::channel::<Depth>(10000);
+
+        let server = QuoteServer {
             quote_ctx: ctx,
-            // receiver,
-            price_tx: tx,
-            price_rx: rx,
+            price_rx: Some(internal_event_rx), // Store receiver for the dispatcher
+            quote_tx,
+            trade_tx,
+            depth_tx,
+        };
+
+        let dispatchers = QuoteDispatchers {
+            quote_rx,
+            trade_rx,
+            depth_rx,
+        };
+
+        Ok((server, dispatchers))
+    }
+
+    // Spawns the dispatcher task that consumes price_rx
+    pub fn start_dispatcher(&mut self) -> Result<(), &'static str> {
+        if self.price_rx.is_none() {
+            return Err("Dispatcher already started or receiver taken.");
         }
+        let mut receiver = self.price_rx.take().unwrap(); // Take ownership of the receiver
+
+        // Clone senders for the spawned task
+        let quote_sender = self.quote_tx.clone();
+        let trade_sender = self.trade_tx.clone();
+        let depth_sender = self.depth_tx.clone();
+
+        tokio::spawn(async move {
+            println!("Starting event dispatcher...");
+            while let Some(event) = receiver.recv().await {
+                let symbol = event.symbol.clone(); // Clone symbol for use in dispatched data
+
+                match event.detail {
+                    PushEventDetail::Quote(data) => {
+                        if quote_sender.send(Quote { symbol, data }).await.is_err() {
+                            eprintln!("Quote channel closed. Dispatcher stopping.");
+                            break; // Stop if quote consumer is gone
+                        }
+                    }
+                    PushEventDetail::Trade(data) => {
+                        if trade_sender.send(Trade { symbol, data }).await.is_err() {
+                            eprintln!("Trade channel closed. Dispatcher stopping.");
+                            break; // Stop if trade consumer is gone
+                        }
+                    }
+                    PushEventDetail::Depth(data) => {
+                        if depth_sender.send(Depth { symbol, data }).await.is_err() {
+                            eprintln!("Depth channel closed. Dispatcher stopping.");
+                            break; // Stop if depth consumer is gone
+                        }
+                    }
+                    _ => {
+                        // Optional: Log unhandled event types
+                        // println!("Ignoring event type: {:?}", event.detail);
+                    }
+                }
+            }
+            println!("Event dispatcher task finished.");
+        });
+        Ok(()) // Indicate dispatcher task was spawned
     }
 
     pub async fn quote_basic(&self, ticker_region_list: Vec<String>) -> HashMap<String, Decimal> {
@@ -54,136 +149,5 @@ impl QuoteServer {
             .await
             .unwrap();
         println!("sub finished");
-    }
-
-    pub async fn start_quote_server(&mut self, db_pool: &crate::db::Storage) {
-        // TODO: maybe refine me to different Vec[T]?
-        let mut prices = Vec::new();
-        let mut trades = Vec::new();
-        println!("start quote server");
-        // 模拟数据处理任务
-        while let Some(event) = self.price_rx.recv().await {
-            println!("event symbol {}", event.symbol.clone());
-            match event.detail {
-                PushEventDetail::Quote(price) => {
-                    prices.push(convert_to_storage(event.symbol, &price));
-                }
-                PushEventDetail::Trade(trade) => {
-                    let mut vals = convert_trade_to_storage(event.symbol, &trade);
-                    trades.append(&mut vals);
-                }
-                _ => {}
-            }
-            if prices.len() >= 10 {
-                println!(
-                    "batch insert db, first is {:?}",
-                    prices.first().clone().unwrap().symbol
-                );
-                db_pool.batch_insert_price(prices.clone()).await;
-                prices.clear(); // 清空数组以便新一轮收集
-            }
-
-            if trades.len() >= 10 {
-                println!(
-                    "batch insert db, first is {:?}",
-                    trades.first().clone().unwrap().symbol
-                );
-                db_pool.batch_insert_trade(trades.clone()).await;
-                trades.clear(); // 清空数组以便新一轮收集
-            }
-        }
-        println!("start quote server done");
-    }
-}
-
-fn convert_to_storage(
-    symbol: String,
-    price: &PushQuote,
-) -> crate::entities::quote_price::ActiveModel {
-    let model = crate::entities::quote_price::ActiveModel {
-        symbol: Set(symbol.clone()),
-        last_done: Set(Some(price.last_done)),
-        open: Set(Some(price.open)),
-        high: Set(Some(price.high)),
-        low: Set(Some(price.low)),
-        timestamp: Set(price.timestamp.unix_timestamp()),
-        volume: Set(Some(price.volume)),
-        turnover: Set(Some(price.turnover)),
-        trade_status: Set(Some(price.trade_status.into())),
-        trade_session: Set(Some(price.trade_session.into())),
-        ..Default::default()
-    };
-    return model;
-}
-
-fn convert_trade_to_storage(
-    symbol: String,
-    data: &PushTrades,
-) -> Vec<crate::entities::quote_trade::ActiveModel> {
-    let models = data
-        .trades
-        .iter()
-        .map(|trade| crate::entities::quote_trade::ActiveModel {
-            symbol: Set(symbol.clone()),
-            price: Set(Some(trade.price)),
-            volume: Default::default(),
-            timestamp: Set(trade.timestamp.unix_timestamp()),
-            trade_type: Set(Some(trade.trade_type.clone())),
-            direction: Set(Some(trade.direction as i32)),
-            trade_session: Set(Some(i32::from(trade.trade_session))),
-            ..Default::default()
-        })
-        .collect();
-
-    return models;
-}
-
-mod test {
-    use crate::db::Storage;
-
-    // use crate::quote_server::QuoteServer;
-    use super::*;
-    use dotenv::dotenv;
-
-    #[tokio::test]
-    async fn test_basic_get() {
-        dotenv().ok();
-        let h = QuoteServer::new().await;
-        // Get basic information of securities
-        let resp = h
-            .quote_ctx
-            .quote(["700.HK", "AAPL.US", "TSLA.US", "NFLX.US"])
-            .await
-            .unwrap();
-        println!("{:?}", resp);
-    }
-
-    #[tokio::test]
-    async fn test_sub() {
-        dotenv().ok();
-        let mut h = QuoteServer::new().await;
-
-        let default_sub: Vec<String> = vec![];
-
-        h.sub(default_sub).await;
-
-        println!("start quote server");
-        let p = Storage::new().await;
-        println!("init storage");
-        println!("init storage finished");
-        h.start_quote_server(&p).await;
-    }
-
-    #[tokio::test]
-    async fn test_security_list() {
-        dotenv::from_filename(".staging.env").unwrap();
-        let h = QuoteServer::new().await;
-        // Get basic information of securities
-        let resp = h
-            .quote_ctx
-            .security_list(Market::US, SecurityListCategory::Overnight)
-            .await
-            .unwrap();
-        println!("{:?}", resp.len());
     }
 }
